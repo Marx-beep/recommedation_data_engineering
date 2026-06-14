@@ -15,6 +15,21 @@ def _tokens(text: str) -> list[str]:
 
 
 def candidate_text(candidate: Candidate) -> str:
+    structured_text = " ".join(
+        [
+            candidate.gpa_ranking,
+            candidate.english_level,
+            *candidate.competition_awards,
+            *candidate.skill_certifications,
+            *candidate.student_work,
+            candidate.self_evaluation,
+            candidate.resume_summary,
+            *(item.summary for item in candidate.research_experience),
+            *(tag for item in candidate.research_experience for tag in item.content_tags),
+            *(item.summary for item in candidate.work_experience),
+            *(tag for item in candidate.work_experience for tag in item.content_tags),
+        ]
+    )
     return " ".join(
         [
             candidate.major,
@@ -25,6 +40,7 @@ def candidate_text(candidate: Candidate) -> str:
             candidate.internship_experience,
             *candidate.industry_tags,
             *candidate.evidence,
+            structured_text,
         ]
     )
 
@@ -55,4 +71,3 @@ def retrieve(profile: JobProfile, candidates: list[Candidate], top_n: int = 10) 
     query = profile_text(profile)
     scored = [(candidate, cosine_similarity(query, candidate_text(candidate))) for candidate in candidates]
     return sorted(scored, key=lambda item: item[1], reverse=True)[:top_n]
-

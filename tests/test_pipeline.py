@@ -56,3 +56,26 @@ def test_partial_llm_resume_result_merges_with_local_profile():
     assert candidate.degree == "博士"
     assert set(candidate.experimental_skills) == {"XRD", "SEM"}
     assert candidate.school == "清华大学"
+
+
+def test_complete_resume_sections_are_structured():
+    text = """清华大学 材料科学与工程专业 博士 2026
+    GPA 3.8/4.0，专业排名前 10%
+    研究方向：固态电解质与锂离子电池
+    科研项目：负责氧化物固态电解质界面稳定性研究，发表 SCI 论文 3 篇。
+    英语 CET-6 580 分
+    全国大学生材料设计竞赛一等奖
+    企业实习：动力电池研发部门实习
+    获得 Python 技能认证
+    担任学生会部长
+    自我评价：学习能力强，具备团队协作能力"""
+    candidate = parse_resume_locally(text, "ITEST00003")
+    assert "前 10%" in candidate.gpa_ranking
+    assert candidate.research_experience
+    assert candidate.research_experience[0].paper_outputs
+    assert "CET-6" in candidate.english_level
+    assert candidate.competition_awards
+    assert candidate.work_experience
+    assert candidate.skill_certifications
+    assert candidate.student_work
+    assert "团队协作" in candidate.self_evaluation

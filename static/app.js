@@ -22,7 +22,7 @@ async function loadCandidates() {
 }
 
 function renderCandidateTable(candidates) {
-  $("candidateTable").innerHTML = candidates.map(c => `<tr>
+  $("candidateTable").innerHTML = candidates.map(c => `<tr class="library-candidate-row" data-id="${esc(c.resume_id)}" tabindex="0">
     <td><strong>${esc(c.resume_id)}</strong><span>${esc(c.graduation_year)} 届</span></td>
     <td><strong>${esc(c.degree)} · ${esc(c.school)}</strong><span>${esc(c.major)}</span></td>
     <td>${esc(c.research_directions.join(" / "))}</td>
@@ -30,6 +30,33 @@ function renderCandidateTable(candidates) {
     <td><strong>SCI ${c.paper_count} 篇</strong><span>专利 ${c.patent_count} 项</span></td>
     <td>${esc(c.industry_tags.join(" / "))}</td>
   </tr>`).join("");
+  document.querySelectorAll(".library-candidate-row").forEach(row => {
+    row.addEventListener("click", () => openLibraryCandidate(row.dataset.id));
+    row.addEventListener("keydown", event => { if (event.key === "Enter") openLibraryCandidate(row.dataset.id); });
+  });
+}
+
+function listBlock(title, items) {
+  const values = (items || []).filter(Boolean);
+  return `<div class="detail-section"><h3>${title}</h3>${values.length ? `<ul>${values.map(item=>`<li>${esc(item)}</li>`).join("")}</ul>` : `<p>未识别到相关信息</p>`}</div>`;
+}
+
+function openLibraryCandidate(id) {
+  const c = state.candidates.find(candidate => candidate.resume_id === id);
+  if (!c) return;
+  const research = (c.research_experience || []).map(item => `<div class="structured-record"><strong>${esc(item.title || "科研经历")}</strong><p>${esc(item.summary)}</p><div class="tag-row">${(item.content_tags || []).map(tag=>`<span class="tag">${esc(tag)}</span>`).join("")}</div>${(item.paper_outputs || []).length ? `<small>成果：${esc(item.paper_outputs.join("；"))}</small>` : ""}</div>`).join("");
+  const careers = (c.work_experience || []).map(item => `<div class="structured-record"><strong>${esc(item.organization || "实习 / 工作经历")} ${esc(item.role)}</strong><p>${esc(item.period)} ${esc(item.summary)}</p><div class="tag-row">${(item.content_tags || []).map(tag=>`<span class="tag">${esc(tag)}</span>`).join("")}</div></div>`).join("");
+  $("dialogContent").innerHTML = `<div class="dialog-head"><span class="badge">结构化人才档案</span><h2>${esc(c.resume_id)} · ${esc(c.school)}</h2><p>${esc(c.degree)} · ${esc(c.major)} · ${esc(c.graduation_year)} 届</p></div>
+    <div class="dialog-body">
+      <div class="detail-section"><h3>大模型整体概括</h3><p>${esc(c.resume_summary || "暂无整体概括")}</p></div>
+      <div class="structured-overview"><div><span>绩点排名</span><strong>${esc(c.gpa_ranking || "未识别")}</strong></div><div><span>英语水平</span><strong>${esc(c.english_level || "未识别")}</strong></div><div><span>研究方向</span><strong>${esc((c.research_directions || []).join(" / "))}</strong></div><div><span>技能认证</span><strong>${esc((c.skill_certifications || []).join(" / ") || "未识别")}</strong></div></div>
+      <div class="detail-section"><h3>科研经历、论文成果及内容标签</h3>${research || "<p>未识别到相关信息</p>"}</div>
+      <div class="detail-section"><h3>实习 / 工作经历</h3>${careers || "<p>未识别到相关信息</p>"}</div>
+      ${listBlock("竞赛获奖", c.competition_awards)}
+      ${listBlock("学生工作", c.student_work)}
+      <div class="detail-section"><h3>自我评价口袋</h3><p>${esc(c.self_evaluation || "未识别到无法归入其他模块的信息")}</p></div>
+    </div>`;
+  $("candidateDialog").showModal();
 }
 
 function updateFileSelection(files) {

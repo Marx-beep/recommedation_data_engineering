@@ -22,6 +22,11 @@ async def llm_adjust(query: str, recommendations: list[Recommendation], enabled:
             "papers": item.candidate.paper_count,
             "project": item.candidate.project_experience,
             "internship": item.candidate.internship_experience,
+            "gpa_ranking": item.candidate.gpa_ranking,
+            "english_level": item.candidate.english_level,
+            "awards": item.candidate.competition_awards,
+            "certifications": item.candidate.skill_certifications,
+            "summary": item.candidate.resume_summary,
         }
         for item in recommendations[:8]
     ]
@@ -50,4 +55,3 @@ async def llm_adjust(query: str, recommendations: list[Recommendation], enabled:
             return True
     except (httpx.HTTPError, KeyError, ValueError, TypeError, json.JSONDecodeError):
         return False
-

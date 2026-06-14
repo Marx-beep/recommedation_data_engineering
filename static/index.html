@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="面向材料化学研发岗位的可解释简历推荐系统">
+  <title>MaterialMatch HR</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">M</div>
+        <div><strong>MaterialMatch</strong><span>研发人才推荐系统</span></div>
+      </div>
+      <nav aria-label="主导航">
+        <button class="nav-item active" data-view="recommend"><span>⌕</span>智能推荐</button>
+        <button class="nav-item" data-view="candidates"><span>▦</span>候选人库</button>
+        <button class="nav-item" data-view="pipeline"><span>⌁</span>流程监控</button>
+      </nav>
+      <div class="sidebar-foot">
+        <span class="status-dot"></span>
+        <div><strong id="systemStatus">系统就绪</strong><span id="modelStatus">检测模型中...</span></div>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">HR WORKSPACE</p>
+          <h1 id="viewTitle">智能推荐</h1>
+        </div>
+        <div class="header-meta">
+          <span><b id="candidateCount">12</b> 份匿名简历</span>
+          <span>数据更新时间 2026-06-14</span>
+        </div>
+      </header>
+
+      <section id="recommendView" class="view active">
+        <div class="query-panel">
+          <div class="panel-head">
+            <div><h2>描述招聘需求</h2><p>输入自然语言，系统将解析需求并完成召回、精排与解释。</p></div>
+            <button id="sampleButton" class="text-button">填入示例</button>
+          </div>
+          <textarea id="queryInput" aria-label="招聘需求" placeholder="例如：招聘材料方向博士，研究固态电解质，熟悉 XRD、SEM 和电化学测试，有 SCI 论文，适合新能源研发岗位。"></textarea>
+          <div class="query-actions">
+            <div class="control-row">
+              <label>推荐数量
+                <select id="topK"><option>3</option><option selected>5</option><option>8</option></select>
+              </label>
+              <label class="switch"><input id="strictDegree" type="checkbox" checked><span></span>严格学历过滤</label>
+              <label class="switch"><input id="useLlm" type="checkbox" checked><span></span>DeepSeek 精排</label>
+            </div>
+            <button id="recommendButton" class="primary-button"><span>⌕</span>开始推荐</button>
+          </div>
+        </div>
+
+        <div id="emptyState" class="empty-state">
+          <div class="empty-icon">⌁</div>
+          <h2>从一段岗位描述开始</h2>
+          <p>系统会展示岗位画像、推荐流水线与候选人匹配依据。</p>
+        </div>
+
+        <div id="resultsArea" class="results-area hidden">
+          <div class="section-title"><div><p class="eyebrow">PARSED PROFILE</p><h2>岗位画像</h2></div><span id="elapsedBadge" class="badge"></span></div>
+          <div id="profileGrid" class="profile-grid"></div>
+
+          <div class="section-title"><div><p class="eyebrow">PIPELINE</p><h2>本次推荐链路</h2></div><span id="llmBadge" class="badge"></span></div>
+          <div id="pipelineStrip" class="pipeline-strip"></div>
+
+          <div class="section-title"><div><p class="eyebrow">TOP MATCHES</p><h2>推荐候选人</h2></div><span id="resultCount"></span></div>
+          <div id="recommendations" class="recommendations"></div>
+        </div>
+      </section>
+
+      <section id="candidatesView" class="view">
+        <div class="table-toolbar">
+          <div><h2>匿名候选人库</h2><p>当前使用模拟材料研发简历，字段已完成结构化。</p></div>
+          <input id="candidateSearch" type="search" placeholder="搜索方向、技能、学校...">
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>编号</th><th>学历 / 学校</th><th>研究方向</th><th>核心技能</th><th>成果</th><th>产业标签</th></tr></thead><tbody id="candidateTable"></tbody></table></div>
+      </section>
+
+      <section id="pipelineView" class="view">
+        <div class="monitor-grid">
+          <div class="monitor-intro"><p class="eyebrow">SYSTEM DESIGN</p><h2>推荐工程流水线</h2><p>从非结构化简历到可解释 Top-K，每个环节都保留可追踪的数据输出。</p></div>
+          <div class="architecture">
+            <div><b>01</b><strong>数据预处理</strong><span>PDF / OCR / 清洗 / 脱敏</span></div>
+            <div><b>02</b><strong>候选人画像</strong><span>结构化抽取 / 领域标签</span></div>
+            <div><b>03</b><strong>RAG 召回</strong><span>语义向量 / Top-N</span></div>
+            <div><b>04</b><strong>规则过滤</strong><span>学历 / 核心技能</span></div>
+            <div><b>05</b><strong>精排重排</strong><span>五维评分 / DeepSeek</span></div>
+            <div><b>06</b><strong>可解释输出</strong><span>理由 / 证据 / 不足</span></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="candidateDialog"><button id="closeDialog" aria-label="关闭">×</button><div id="dialogContent"></div></dialog>
+  <div id="toast" role="status"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
+

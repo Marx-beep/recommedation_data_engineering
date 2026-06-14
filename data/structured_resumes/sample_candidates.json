@@ -1,0 +1,111 @@
+[
+  {
+    "resume_id": "R001", "degree": "博士", "school": "清华大学", "major": "材料科学与工程", "graduation_year": 2026,
+    "research_directions": ["固态电解质", "锂离子电池", "界面改性"],
+    "experimental_skills": ["XRD", "SEM", "TEM", "EIS", "电化学测试", "扣式电池组装"],
+    "software_skills": ["Origin", "Materials Studio", "Python"], "paper_count": 4, "patent_count": 1,
+    "project_experience": "负责氧化物固态电解质界面稳定性研究，参与国家重点研发课题。",
+    "internship_experience": "某头部动力电池企业研发实习 6 个月。",
+    "industry_tags": ["新能源", "动力电池", "储能材料"],
+    "evidence": ["研究氧化物固态电解质界面稳定性与离子传输机制。", "熟练掌握 XRD、SEM、TEM、EIS 与电化学测试。"]
+  },
+  {
+    "resume_id": "R002", "degree": "博士", "school": "浙江大学", "major": "化学工程", "graduation_year": 2025,
+    "research_directions": ["正极材料", "锂离子电池", "高镍三元材料"],
+    "experimental_skills": ["材料合成", "XRD", "SEM", "XPS", "电化学测试", "充放电测试"],
+    "software_skills": ["Origin", "Matlab"], "paper_count": 5, "patent_count": 2,
+    "project_experience": "开发高镍三元正极表面包覆工艺，提升循环稳定性。",
+    "internship_experience": "", "industry_tags": ["新能源", "动力电池", "化工新材料"],
+    "evidence": ["博士课题聚焦高镍三元正极材料表面包覆。", "发表 SCI 论文 5 篇并申请发明专利 2 项。"]
+  },
+  {
+    "resume_id": "R003", "degree": "硕士", "school": "华南理工大学", "major": "高分子材料", "graduation_year": 2026,
+    "research_directions": ["高分子材料", "复合材料", "固态电解质"],
+    "experimental_skills": ["材料合成", "FTIR", "SEM", "热重分析", "电化学测试"],
+    "software_skills": ["Origin", "Gaussian"], "paper_count": 2, "patent_count": 1,
+    "project_experience": "制备柔性聚合物固态电解质并评估热稳定性。",
+    "internship_experience": "化工新材料企业配方开发实习。", "industry_tags": ["储能材料", "化工新材料"],
+    "evidence": ["制备柔性聚合物固态电解质。", "掌握 FTIR、热重分析和基础电化学测试。"]
+  },
+  {
+    "resume_id": "R004", "degree": "博士", "school": "中国科学技术大学", "major": "物理化学", "graduation_year": 2025,
+    "research_directions": ["催化材料", "纳米材料", "电催化"],
+    "experimental_skills": ["材料合成", "XRD", "TEM", "XPS", "拉曼光谱"],
+    "software_skills": ["VASP", "Python", "Origin", "第一性原理计算"], "paper_count": 7, "patent_count": 0,
+    "project_experience": "面向绿氢的纳米电催化剂设计与机理研究。",
+    "internship_experience": "", "industry_tags": ["新能源", "环保材料"],
+    "evidence": ["以第一性原理计算辅助电催化剂设计。", "发表催化方向 SCI 论文 7 篇。"]
+  },
+  {
+    "resume_id": "R005", "degree": "硕士", "school": "上海交通大学", "major": "材料工程", "graduation_year": 2025,
+    "research_directions": ["负极材料", "钠离子电池", "碳材料"],
+    "experimental_skills": ["材料合成", "XRD", "SEM", "电化学测试", "扣式电池组装"],
+    "software_skills": ["Origin", "Python"], "paper_count": 2, "patent_count": 1,
+    "project_experience": "生物质硬碳钠离子电池负极的规模化制备研究。",
+    "internship_experience": "储能电池初创企业中试实习。", "industry_tags": ["新能源", "储能材料", "先进制造"],
+    "evidence": ["负责硬碳负极材料制备和扣式电池组装。", "具备中试线数据分析经验。"]
+  },
+  {
+    "resume_id": "R006", "degree": "博士", "school": "复旦大学", "major": "电子科学与技术", "graduation_year": 2026,
+    "research_directions": ["半导体材料", "光电材料", "薄膜器件"],
+    "experimental_skills": ["XRD", "SEM", "XPS", "拉曼光谱"],
+    "software_skills": ["COMSOL", "Matlab", "Python"], "paper_count": 6, "patent_count": 2,
+    "project_experience": "二维半导体薄膜器件制备与光电性能调控。",
+    "internship_experience": "晶圆制造企业工艺研发实习。", "industry_tags": ["半导体材料", "电子材料", "先进制造"],
+    "evidence": ["完成二维半导体薄膜器件制备。", "具备晶圆工艺研发实习经历。"]
+  },
+  {
+    "resume_id": "R007", "degree": "硕士", "school": "北京化工大学", "major": "应用化学", "graduation_year": 2026,
+    "research_directions": ["催化材料", "环保材料"],
+    "experimental_skills": ["材料合成", "XRD", "SEM", "FTIR", "热重分析"],
+    "software_skills": ["Origin"], "paper_count": 1, "patent_count": 1,
+    "project_experience": "工业废水催化降解材料开发。",
+    "internship_experience": "环保工程公司实验室实习。", "industry_tags": ["环保材料", "化工新材料"],
+    "evidence": ["开发工业废水催化降解材料。", "具有环保工程实验室经历。"]
+  },
+  {
+    "resume_id": "R008", "degree": "博士", "school": "哈尔滨工业大学", "major": "材料学", "graduation_year": 2025,
+    "research_directions": ["固态电解质", "第一性原理计算", "分子动力学模拟"],
+    "experimental_skills": ["XRD", "EIS", "电化学测试"],
+    "software_skills": ["VASP", "LAMMPS", "Python", "第一性原理计算", "分子动力学模拟"], "paper_count": 5, "patent_count": 0,
+    "project_experience": "硫化物固态电解质离子传输的多尺度模拟与实验验证。",
+    "internship_experience": "", "industry_tags": ["新能源", "储能材料"],
+    "evidence": ["以 VASP 和 LAMMPS 研究硫化物电解质离子传输。", "实验验证包含 EIS 与电化学测试。"]
+  },
+  {
+    "resume_id": "R009", "degree": "本科", "school": "武汉理工大学", "major": "材料化学", "graduation_year": 2026,
+    "research_directions": ["锂离子电池", "正极材料"],
+    "experimental_skills": ["材料合成", "XRD", "SEM", "电化学测试"],
+    "software_skills": ["Origin"], "paper_count": 0, "patent_count": 0,
+    "project_experience": "本科创新项目：磷酸铁锂正极材料改性。",
+    "internship_experience": "电池材料企业质量检测实习。", "industry_tags": ["新能源", "动力电池"],
+    "evidence": ["完成磷酸铁锂正极材料改性本科项目。", "具有质量检测实习经历。"]
+  },
+  {
+    "resume_id": "R010", "degree": "博士", "school": "南京大学", "major": "化学", "graduation_year": 2026,
+    "research_directions": ["钠离子电池", "正极材料", "储能材料"],
+    "experimental_skills": ["材料合成", "XRD", "TEM", "XPS", "电化学测试", "充放电测试"],
+    "software_skills": ["Origin", "Materials Studio"], "paper_count": 4, "patent_count": 1,
+    "project_experience": "层状氧化物钠离子电池正极结构调控。",
+    "internship_experience": "", "industry_tags": ["新能源", "储能材料"],
+    "evidence": ["研究层状氧化物钠离子正极结构调控。", "熟练开展充放电和电化学测试。"]
+  },
+  {
+    "resume_id": "R011", "degree": "硕士", "school": "天津大学", "major": "化学工程", "graduation_year": 2025,
+    "research_directions": ["锂离子电池", "电池回收", "环保材料"],
+    "experimental_skills": ["材料合成", "XRD", "SEM", "电化学测试"],
+    "software_skills": ["Python", "Origin"], "paper_count": 1, "patent_count": 2,
+    "project_experience": "退役锂电池湿法回收工艺优化。",
+    "internship_experience": "电池回收企业工艺实习。", "industry_tags": ["新能源", "环保材料", "先进制造"],
+    "evidence": ["优化退役锂电池湿法回收工艺。", "申请电池回收相关专利 2 项。"]
+  },
+  {
+    "resume_id": "R012", "degree": "博士", "school": "西安交通大学", "major": "能源动力", "graduation_year": 2025,
+    "research_directions": ["锂离子电池", "热管理", "安全评估"],
+    "experimental_skills": ["电化学测试", "充放电测试", "热重分析"],
+    "software_skills": ["COMSOL", "Matlab", "Python"], "paper_count": 3, "patent_count": 2,
+    "project_experience": "动力电池热失控传播与系统安全研究。",
+    "internship_experience": "新能源汽车企业电池系统研发实习。", "industry_tags": ["新能源", "动力电池", "先进制造"],
+    "evidence": ["负责动力电池热失控传播建模与测试。", "具备新能源汽车企业实习经历。"]
+  }
+]

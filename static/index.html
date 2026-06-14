@@ -76,8 +76,29 @@
 
       <section id="candidatesView" class="view">
         <div class="table-toolbar">
-          <div><h2>匿名候选人库</h2><p>当前使用模拟材料研发简历，字段已完成结构化。</p></div>
-          <input id="candidateSearch" type="search" placeholder="搜索方向、技能、学校...">
+          <div><h2>匿名候选人库</h2><p>支持大批量简历统一抽取、脱敏与结构化解析。</p></div>
+          <div class="toolbar-actions">
+            <input id="candidateSearch" type="search" placeholder="搜索方向、技能、学校...">
+            <button id="openImportButton" class="primary-button"><span>＋</span>批量导入</button>
+          </div>
+        </div>
+        <div id="importPanel" class="import-panel hidden">
+          <div class="import-copy">
+            <p class="eyebrow">BATCH INGESTION</p>
+            <h2>批量上传并统一结构化</h2>
+            <p>支持 PDF、DOCX、TXT、图片与 ZIP。文件流式落盘，后台队列异步解析，适合大批量候选人导入。</p>
+          </div>
+          <label id="dropZone" class="drop-zone">
+            <input id="resumeFiles" type="file" multiple accept=".pdf,.docx,.txt,.md,.rtf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.zip">
+            <span class="drop-icon">⇧</span>
+            <strong>选择文件或拖拽到这里</strong>
+            <small id="fileSelection">单批最多 10,000 份；图片 OCR 需安装 Tesseract</small>
+          </label>
+          <div class="import-actions">
+            <label class="switch"><input id="importUseLlm" type="checkbox" checked><span></span>使用 DeepSeek 结构化增强</label>
+            <div><button id="cancelImportButton" class="secondary-button">收起</button><button id="startImportButton" class="primary-button">创建导入任务</button></div>
+          </div>
+          <div id="importJobs" class="import-jobs"></div>
         </div>
         <div class="table-wrap"><table><thead><tr><th>编号</th><th>学历 / 学校</th><th>研究方向</th><th>核心技能</th><th>成果</th><th>产业标签</th></tr></thead><tbody id="candidateTable"></tbody></table></div>
       </section>
@@ -103,4 +124,3 @@
   <script src="/static/app.js"></script>
 </body>
 </html>
-

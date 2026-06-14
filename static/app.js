@@ -1,6 +1,7 @@
-const state = { candidates: [], recommendations: [] };
+const state = { candidates: [], recommendations: [], importPoller: null };
 const $ = (id) => document.getElementById(id);
 const sample = "招聘材料方向博士，研究固态电解质或锂离子电池正极材料，熟悉 XRD、SEM、电化学测试，有 SCI 论文，适合新能源研发岗位。";
+const esc = (value) => String(value ?? "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 
 function toast(message) {
   $("toast").textContent = message;
@@ -16,18 +17,61 @@ async function loadHealth() {
 
 async function loadCandidates() {
   state.candidates = await fetch("/api/candidates").then(r => r.json());
+  $("candidateCount").textContent = state.candidates.length;
   renderCandidateTable(state.candidates);
 }
 
 function renderCandidateTable(candidates) {
   $("candidateTable").innerHTML = candidates.map(c => `<tr>
-    <td><strong>${c.resume_id}</strong><span>${c.graduation_year} 届</span></td>
-    <td><strong>${c.degree} · ${c.school}</strong><span>${c.major}</span></td>
-    <td>${c.research_directions.join(" / ")}</td>
-    <td>${c.experimental_skills.slice(0,4).join(" / ")}</td>
+    <td><strong>${esc(c.resume_id)}</strong><span>${esc(c.graduation_year)} 届</span></td>
+    <td><strong>${esc(c.degree)} · ${esc(c.school)}</strong><span>${esc(c.major)}</span></td>
+    <td>${esc(c.research_directions.join(" / "))}</td>
+    <td>${esc(c.experimental_skills.slice(0,4).join(" / "))}</td>
     <td><strong>SCI ${c.paper_count} 篇</strong><span>专利 ${c.patent_count} 项</span></td>
-    <td>${c.industry_tags.join(" / ")}</td>
+    <td>${esc(c.industry_tags.join(" / "))}</td>
   </tr>`).join("");
+}
+
+function updateFileSelection(files) {
+  const count = files?.length || 0;
+  $("fileSelection").textContent = count ? `已选择 ${count} 个文件，提交后将在后台统一处理` : "单批最多 10,000 份；图片 OCR 需安装 Tesseract";
+}
+
+async function startImport() {
+  const files = $("resumeFiles").files;
+  if (!files.length) return toast("请选择简历文件或 ZIP 压缩包");
+  const data = new FormData();
+  [...files].forEach(file => data.append("files", file));
+  data.append("use_llm", $("importUseLlm").checked);
+  const button = $("startImportButton");
+  button.disabled = true; button.textContent = "正在流式上传...";
+  try {
+    const response = await fetch("/api/import-jobs", { method:"POST", body:data });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || "创建任务失败");
+    $("resumeFiles").value = ""; updateFileSelection();
+    toast(`导入任务 ${payload.job_id} 已创建`);
+    await loadImportJobs();
+    beginImportPolling();
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; button.textContent = "创建导入任务"; }
+}
+
+async function loadImportJobs() {
+  const jobs = await fetch("/api/import-jobs?limit=8").then(r => r.json());
+  $("importJobs").innerHTML = jobs.length ? jobs.map(job => {
+    const percent = job.total ? Math.round(job.processed / job.total * 100) : 0;
+    const status = {queued:"等待处理",processing:"结构化解析中",completed:"已完成",failed:"失败"}[job.status] || job.status;
+    return `<div class="import-job"><div><strong>${esc(job.job_id)}</strong><span>${status}</span></div>
+      <div><div class="progress-track"><div class="progress-fill" style="width:${percent}%"></div></div><span>${job.processed} / ${job.total} · ${percent}%</span></div>
+      <div class="job-metrics">成功 ${job.succeeded} · 失败 ${job.failed}<br>LLM ${job.llm_parsed}</div></div>`;
+  }).join("") : "";
+  if (jobs.some(job => ["queued","processing"].includes(job.status))) beginImportPolling();
+  else if (state.importPoller) { clearInterval(state.importPoller); state.importPoller = null; await loadCandidates(); }
+}
+
+function beginImportPolling() {
+  if (!state.importPoller) state.importPoller = setInterval(() => loadImportJobs().catch(()=>{}), 1500);
 }
 
 function renderProfile(profile) {
@@ -106,5 +150,11 @@ $("candidateSearch").addEventListener("input", event => {
   const q = event.target.value.toLowerCase();
   renderCandidateTable(state.candidates.filter(c => JSON.stringify(c).toLowerCase().includes(q)));
 });
-Promise.all([loadHealth(), loadCandidates()]).catch(() => toast("初始化失败，请确认服务已启动"));
-
+$("openImportButton").addEventListener("click", () => { $("importPanel").classList.remove("hidden"); loadImportJobs(); });
+$("cancelImportButton").addEventListener("click", () => $("importPanel").classList.add("hidden"));
+$("resumeFiles").addEventListener("change", event => updateFileSelection(event.target.files));
+$("startImportButton").addEventListener("click", startImport);
+["dragenter","dragover"].forEach(name => $("dropZone").addEventListener(name, event => { event.preventDefault(); $("dropZone").classList.add("dragging"); }));
+["dragleave","drop"].forEach(name => $("dropZone").addEventListener(name, event => { event.preventDefault(); $("dropZone").classList.remove("dragging"); }));
+$("dropZone").addEventListener("drop", event => { $("resumeFiles").files = event.dataTransfer.files; updateFileSelection(event.dataTransfer.files); });
+Promise.all([loadHealth(), loadCandidates(), loadImportJobs()]).catch(() => toast("初始化失败，请确认服务已启动"));

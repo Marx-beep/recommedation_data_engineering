@@ -8,4 +8,7 @@ outputs/*.json
 server.log
 server.err.log
 .server.pid
-
+data/raw_resumes/uploads/
+data/processed_text/imported/
+data/structured_resumes/imported/
+data/import_jobs/

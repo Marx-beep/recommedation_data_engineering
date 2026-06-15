@@ -61,27 +61,47 @@ function openLibraryCandidate(id) {
 
 function updateFileSelection(files) {
   const count = files?.length || 0;
-  $("fileSelection").textContent = count ? `已选择 ${count} 个文件，提交后将在后台统一处理` : "单批最多 10,000 份；图片 OCR 需安装 Tesseract";
+  $("fileSelection").textContent = count ? `已选择 ${count} 个文件，提交后将在后台统一处理` : "单文件上限 1GB；图片 OCR 需安装 Tesseract";
 }
 
 async function startImport() {
   const files = $("resumeFiles").files;
   if (!files.length) return toast("请选择简历文件或 ZIP 压缩包");
-  const data = new FormData();
-  [...files].forEach(file => data.append("files", file));
-  data.append("use_llm", $("importUseLlm").checked);
   const button = $("startImportButton");
   button.disabled = true; button.textContent = "正在流式上传...";
   try {
-    const response = await fetch("/api/import-jobs", { method:"POST", body:data });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || "创建任务失败");
+    let payload;
+    for (const file of [...files]) payload = await uploadFileInChunks(file, $("importUseLlm").checked, button);
     $("resumeFiles").value = ""; updateFileSelection();
     toast(`导入任务 ${payload.job_id} 已创建`);
     await loadImportJobs();
     beginImportPolling();
   } catch (error) { toast(error.message); }
   finally { button.disabled = false; button.textContent = "创建导入任务"; }
+}
+
+async function uploadFileInChunks(file, useLlm, button) {
+  let response = await fetch("/api/upload-sessions", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({file_name:file.name,file_size:file.size,use_llm:useLlm})
+  });
+  let session = await response.json();
+  if (!response.ok) throw new Error(session.detail || "创建上传会话失败");
+  let chunkIndex = 0;
+  for (let start = 0; start < file.size; start += session.chunk_size) {
+    const end = Math.min(start + session.chunk_size, file.size);
+    button.textContent = `上传 ${file.name} · ${Math.round(end / file.size * 100)}%`;
+    response = await fetch(`/api/upload-sessions/${session.upload_id}/chunks/${chunkIndex}`, {
+      method:"PUT", body:file.slice(start, end)
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "分块上传失败");
+    chunkIndex += 1;
+  }
+  response = await fetch(`/api/upload-sessions/${session.upload_id}/complete`, {method:"POST"});
+  const job = await response.json();
+  if (!response.ok) throw new Error(job.detail || "创建解析任务失败");
+  return job;
 }
 
 async function loadImportJobs() {
@@ -91,8 +111,18 @@ async function loadImportJobs() {
     const status = {queued:"等待处理",processing:"结构化解析中",completed:"已完成",failed:"失败"}[job.status] || job.status;
     return `<div class="import-job"><div><strong>${esc(job.job_id)}</strong><span>${status}</span></div>
       <div><div class="progress-track"><div class="progress-fill" style="width:${percent}%"></div></div><span>${job.processed} / ${job.total} · ${percent}%</span></div>
-      <div class="job-metrics">成功 ${job.succeeded} · 失败 ${job.failed}<br>LLM ${job.llm_parsed}</div></div>`;
+      <div class="job-metrics">成功 ${job.succeeded} · 失败 ${job.failed}<br>LLM ${job.llm_parsed}</div>
+      ${(job.errors || []).length || (job.skipped || []).length ? `<details class="job-errors"><summary>查看异常与跳过文件</summary>${[...(job.errors || []),...(job.skipped || [])].slice(0,20).map(item=>`<p><b>${esc(item.file)}</b>：${esc(item.message)}</p>`).join("")}${["completed","failed"].includes(job.status) ? `<button class="secondary-button retry-job" data-job-id="${esc(job.job_id)}">重试解析</button>` : ""}</details>` : ""}</div>`;
   }).join("") : "";
+  document.querySelectorAll(".retry-job").forEach(button => button.addEventListener("click", async event => {
+    event.preventDefault();
+    const response = await fetch(`/api/import-jobs/${button.dataset.jobId}/retry`, {method:"POST"});
+    const result = await response.json();
+    if (!response.ok) return toast(result.detail || "重试失败");
+    toast(`任务 ${result.job_id} 已重新开始`);
+    beginImportPolling();
+    loadImportJobs();
+  }));
   if (jobs.some(job => ["queued","processing"].includes(job.status))) beginImportPolling();
   else if (state.importPoller) { clearInterval(state.importPoller); state.importPoller = null; await loadCandidates(); }
 }

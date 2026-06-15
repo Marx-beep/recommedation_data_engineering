@@ -23,7 +23,8 @@ class Settings:
     use_llm: bool = os.getenv("USE_LLM", "true").lower() not in {"0", "false", "no"}
     import_workers: int = int(os.getenv("IMPORT_WORKERS", "3"))
     max_batch_files: int = int(os.getenv("MAX_BATCH_FILES", "10000"))
-    max_file_mb: int = int(os.getenv("MAX_FILE_MB", "50"))
+    max_file_mb: int = int(os.getenv("MAX_FILE_MB", "1024"))
+    max_archive_mb: int = int(os.getenv("MAX_ARCHIVE_MB", "1024"))
     max_batch_gb: int = int(os.getenv("MAX_BATCH_GB", "5"))
 
 

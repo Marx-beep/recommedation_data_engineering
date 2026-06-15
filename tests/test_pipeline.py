@@ -1,6 +1,14 @@
 import asyncio
+import io
+import zipfile
+from pathlib import Path
 
 from src.extraction.job_parser import parse_job_locally
+from src.ingestion.batch_service import (
+    _expand_archives,
+    append_upload_chunk,
+    create_upload_session,
+)
 from src.ingestion.resume_parser import _merge_model_candidate, parse_resume_locally
 from src.ingestion.text_extractor import clean_and_anonymize
 from src.models import RecommendationRequest
@@ -79,3 +87,30 @@ def test_complete_resume_sections_are_structured():
     assert candidate.skill_certifications
     assert candidate.student_work
     assert "团队协作" in candidate.self_evaluation
+
+
+def test_zip_expansion_reports_unsupported_files(tmp_path: Path):
+    archive_path = tmp_path / "resumes.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("candidate.txt", "materials candidate resume with enough text")
+        archive.writestr("legacy.doc", b"legacy")
+    files, skipped = _expand_archives([str(archive_path)], tmp_path)
+    assert len(files) == 1
+    assert skipped[0]["file"] == "legacy.doc"
+    assert "docx" in skipped[0]["message"]
+
+
+def test_chunked_upload_session_appends_in_order(monkeypatch, tmp_path: Path):
+    import src.ingestion.batch_service as batch_service
+
+    monkeypatch.setattr(batch_service, "RAW_DIR", tmp_path)
+    session = create_upload_session("large-resumes.zip", 6, False)
+
+    async def chunks():
+        yield b"abc"
+        yield b"def"
+
+    result = asyncio.run(append_upload_chunk(session["upload_id"], 0, chunks()))
+    target = tmp_path / session["upload_id"] / "00001-large-resumes.zip"
+    assert result["received"] == 6
+    assert target.read_bytes() == b"abcdef"

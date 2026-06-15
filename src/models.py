@@ -62,6 +62,12 @@ class RecommendationRequest(BaseModel):
     use_llm: bool = True
 
 
+class UploadSessionRequest(BaseModel):
+    file_name: str
+    file_size: int = Field(gt=0)
+    use_llm: bool = True
+
+
 class ScoreBreakdown(BaseModel):
     research: int
     skills: int

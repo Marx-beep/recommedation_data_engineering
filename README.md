@@ -71,6 +71,8 @@ HR 自然语言需求
 - `GET /api/health`：服务、候选人数量和模型配置状态。
 - `GET /api/candidates`：结构化匿名候选人列表。
 - `POST /api/import-jobs`：流式上传一批简历并创建异步结构化任务。
+- `POST /api/import-jobs/stream`：面向最高 1GB 单文件或 ZIP 的原始二进制流式上传接口。
+- `POST /api/upload-sessions`：创建大文件分块上传会话；浏览器按 8MB 分块上传，适配 1GB 文件和受限反向代理。
 - `GET /api/import-jobs/{job_id}`：查询批处理进度、成功数与失败原因。
 - `POST /api/recommend`：执行完整推荐流程。
 - `GET /docs`：FastAPI 自动接口文档。
@@ -117,9 +119,10 @@ py -m pytest -q
 大模型整体画像概括
 ```
 
-默认限制为每批最多 10,000 份、单文件 50MB、单批总量 5GB，可通过 `.env.example` 中的参数调整。任务状态会持久化，服务重启后自动继续未完成任务。
+默认限制为每批最多 10,000 份、单文件与 ZIP 压缩包均为 1GB、单批总量 5GB，可通过 `.env.example` 中的参数调整。任务状态会持久化，服务重启后自动继续未完成任务。
 
 图片简历 OCR 使用 `pytesseract`，运行机器需额外安装 Tesseract 与中文语言包；未安装时，对应文件会在任务错误列表中给出明确提示，不影响同批其他简历继续处理。
+PDF 原生文本过少时会自动渲染页面并进入 OCR 回退；任务完成后可在候选人库中查看错误详情并点击“重试解析”。
 
 ## 隐私与安全
 

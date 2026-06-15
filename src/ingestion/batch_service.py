@@ -7,6 +7,7 @@ import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import unquote
 
 from fastapi import UploadFile
 
@@ -21,6 +22,7 @@ TEXT_DIR = ROOT / "data" / "processed_text" / "imported"
 STRUCTURED_DIR = ROOT / "data" / "structured_resumes" / "imported"
 JOB_DIR = ROOT / "data" / "import_jobs"
 TASKS: set[asyncio.Task] = set()
+CHUNK_SIZE = 8 * 1024 * 1024
 
 
 def _now() -> str:
@@ -33,6 +35,10 @@ def _job_path(job_id: str) -> Path:
 
 def _manifest_path(job_id: str) -> Path:
     return JOB_DIR / f"{job_id}.files.json"
+
+
+def _session_path(upload_id: str) -> Path:
+    return RAW_DIR / upload_id / "upload.session.json"
 
 
 def _write_job(job: dict) -> None:
@@ -70,21 +76,33 @@ async def save_uploads(files: list[UploadFile], use_llm: bool) -> dict:
         safe_name = Path(upload.filename or f"resume-{len(saved) + 1}.txt").name
         target = job_raw_dir / f"{len(saved) + 1:05d}-{safe_name}"
         size = 0
-        with target.open("wb") as destination:
-            while chunk := await upload.read(1024 * 1024):
-                size += len(chunk)
-                batch_size += len(chunk)
-                if size > settings.max_file_mb * 1024 * 1024:
-                    target.unlink(missing_ok=True)
-                    raise ValueError(f"{safe_name} 超过单文件 {settings.max_file_mb}MB 限制")
-                if batch_size > settings.max_batch_gb * 1024 * 1024 * 1024:
-                    target.unlink(missing_ok=True)
-                    raise ValueError(f"单批上传总大小超过 {settings.max_batch_gb}GB 限制")
-                destination.write(chunk)
+        size_limit_mb = settings.max_archive_mb if target.suffix.lower() == ".zip" else settings.max_file_mb
+        upload_error = ""
+        try:
+            with target.open("wb") as destination:
+                while chunk := await upload.read(1024 * 1024):
+                    size += len(chunk)
+                    batch_size += len(chunk)
+                    if size > size_limit_mb * 1024 * 1024:
+                        upload_error = f"{safe_name} 超过 {size_limit_mb}MB 限制"
+                        break
+                    if batch_size > settings.max_batch_gb * 1024 * 1024 * 1024:
+                        upload_error = f"单批上传总大小超过 {settings.max_batch_gb}GB 限制"
+                        break
+                    destination.write(chunk)
+        finally:
+            await upload.close()
+        if upload_error:
+            target.unlink(missing_ok=True)
+            shutil.rmtree(job_raw_dir, ignore_errors=True)
+            raise ValueError(upload_error)
         saved.append(str(target))
-        await upload.close()
 
-    expanded = await asyncio.to_thread(_expand_archives, saved, job_raw_dir)
+    try:
+        expanded, skipped = await asyncio.to_thread(_expand_archives, saved, job_raw_dir)
+    except Exception:
+        shutil.rmtree(job_raw_dir, ignore_errors=True)
+        raise
     if not expanded:
         raise ValueError("未找到支持的简历文件")
     if len(expanded) > settings.max_batch_files:
@@ -101,6 +119,7 @@ async def save_uploads(files: list[UploadFile], use_llm: bool) -> dict:
         "llm_parsed": 0,
         "use_llm": use_llm,
         "errors": [],
+        "skipped": skipped,
     }
     JOB_DIR.mkdir(parents=True, exist_ok=True)
     _manifest_path(job_id).write_text(json.dumps(expanded, ensure_ascii=False), encoding="utf-8")
@@ -111,8 +130,114 @@ async def save_uploads(files: list[UploadFile], use_llm: bool) -> dict:
     return public_job(job)
 
 
-def _expand_archives(saved: list[str], job_raw_dir: Path) -> list[str]:
+async def save_streamed_upload(file_name: str, chunks, use_llm: bool) -> dict:
+    safe_name = Path(unquote(file_name or "resumes.zip")).name
+    job_id = uuid.uuid4().hex[:12]
+    job_raw_dir = RAW_DIR / job_id
+    job_raw_dir.mkdir(parents=True, exist_ok=True)
+    target = job_raw_dir / f"00001-{safe_name}"
+    size_limit_mb = settings.max_archive_mb if target.suffix.lower() == ".zip" else settings.max_file_mb
+    size = 0
+    try:
+        with target.open("wb") as destination:
+            async for chunk in chunks:
+                size += len(chunk)
+                if size > size_limit_mb * 1024 * 1024:
+                    raise ValueError(f"{safe_name} 超过 {size_limit_mb}MB 限制")
+                destination.write(chunk)
+        return await _create_job_from_saved(job_id, job_raw_dir, [str(target)], use_llm)
+    except Exception:
+        shutil.rmtree(job_raw_dir, ignore_errors=True)
+        raise
+
+
+def create_upload_session(file_name: str, file_size: int, use_llm: bool) -> dict:
+    safe_name = Path(unquote(file_name or "resumes.zip")).name
+    limit_mb = settings.max_archive_mb if Path(safe_name).suffix.lower() == ".zip" else settings.max_file_mb
+    if file_size > limit_mb * 1024 * 1024:
+        raise ValueError(f"{safe_name} 超过 {limit_mb}MB 限制")
+    upload_id = uuid.uuid4().hex[:12]
+    upload_dir = RAW_DIR / upload_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    session = {
+        "upload_id": upload_id,
+        "file_name": safe_name,
+        "file_size": file_size,
+        "received": 0,
+        "next_chunk": 0,
+        "use_llm": use_llm,
+    }
+    _session_path(upload_id).write_text(json.dumps(session, ensure_ascii=False), encoding="utf-8")
+    return {**session, "chunk_size": CHUNK_SIZE}
+
+
+async def append_upload_chunk(upload_id: str, chunk_index: int, chunks) -> dict:
+    session_path = _session_path(upload_id)
+    if not session_path.exists():
+        raise ValueError("上传会话不存在或已过期")
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    if chunk_index != session["next_chunk"]:
+        raise ValueError(f"分块顺序错误，期望 {session['next_chunk']}，收到 {chunk_index}")
+    target = session_path.parent / f"00001-{session['file_name']}"
+    chunk_bytes = 0
+    with target.open("ab") as destination:
+        async for chunk in chunks:
+            chunk_bytes += len(chunk)
+            if chunk_bytes > CHUNK_SIZE:
+                raise ValueError("单个上传分块超过限制")
+            destination.write(chunk)
+    session["received"] += chunk_bytes
+    if session["received"] > session["file_size"]:
+        raise ValueError("已上传数据超过声明的文件大小")
+    session["next_chunk"] += 1
+    session_path.write_text(json.dumps(session, ensure_ascii=False), encoding="utf-8")
+    return {"upload_id": upload_id, "received": session["received"], "file_size": session["file_size"]}
+
+
+async def finalize_upload_session(upload_id: str) -> dict:
+    session_path = _session_path(upload_id)
+    if not session_path.exists():
+        raise ValueError("上传会话不存在或已过期")
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    if session["received"] != session["file_size"]:
+        raise ValueError(f"文件尚未上传完成：{session['received']} / {session['file_size']}")
+    target = session_path.parent / f"00001-{session['file_name']}"
+    session_path.unlink(missing_ok=True)
+    return await _create_job_from_saved(upload_id, target.parent, [str(target)], session["use_llm"])
+
+
+async def _create_job_from_saved(job_id: str, job_raw_dir: Path, saved: list[str], use_llm: bool) -> dict:
+    expanded, skipped = await asyncio.to_thread(_expand_archives, saved, job_raw_dir)
+    if not expanded:
+        raise ValueError("未找到支持的简历文件")
+    if len(expanded) > settings.max_batch_files:
+        raise ValueError(f"单批最多处理 {settings.max_batch_files} 份简历")
+    job = {
+        "job_id": job_id,
+        "status": "queued",
+        "created_at": _now(),
+        "updated_at": _now(),
+        "total": len(expanded),
+        "processed": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "llm_parsed": 0,
+        "use_llm": use_llm,
+        "errors": [],
+        "skipped": skipped,
+    }
+    JOB_DIR.mkdir(parents=True, exist_ok=True)
+    _manifest_path(job_id).write_text(json.dumps(expanded, ensure_ascii=False), encoding="utf-8")
+    _write_job(job)
+    task = asyncio.create_task(process_job(job_id))
+    TASKS.add(task)
+    task.add_done_callback(TASKS.discard)
+    return public_job(job)
+
+
+def _expand_archives(saved: list[str], job_raw_dir: Path) -> tuple[list[str], list[dict]]:
     result: list[str] = []
+    skipped: list[dict] = []
     expanded_size = 0
     for item in saved:
         path = Path(item)
@@ -122,7 +247,13 @@ def _expand_archives(saved: list[str], job_raw_dir: Path) -> list[str]:
             try:
                 with zipfile.ZipFile(path) as archive:
                     for info in archive.infolist():
-                        if info.is_dir() or Path(info.filename).suffix.lower() not in SUPPORTED_EXTENSIONS:
+                        if info.is_dir():
+                            continue
+                        suffix = Path(info.filename).suffix.lower()
+                        if suffix not in SUPPORTED_EXTENSIONS:
+                            if len(skipped) < 50:
+                                message = "旧版 .doc 请转换为 .docx" if suffix == ".doc" else f"不支持的文件类型：{suffix or '未知'}"
+                                skipped.append({"file": Path(info.filename).name, "message": message})
                             continue
                         if len(result) >= settings.max_batch_files:
                             raise ValueError(f"ZIP 内简历数量超过 {settings.max_batch_files} 份")
@@ -139,7 +270,9 @@ def _expand_archives(saved: list[str], job_raw_dir: Path) -> list[str]:
                 raise ValueError(f"{path.name} 不是有效的 ZIP 文件") from exc
         elif path.suffix.lower() in SUPPORTED_EXTENSIONS:
             result.append(str(path))
-    return result
+        else:
+            skipped.append({"file": path.name, "message": f"不支持的文件类型：{path.suffix.lower() or '未知'}"})
+    return result, skipped
 
 
 async def process_job(job_id: str) -> None:
@@ -205,3 +338,25 @@ def resume_incomplete_jobs() -> None:
             task = asyncio.create_task(process_job(job["job_id"]))
             TASKS.add(task)
             task.add_done_callback(TASKS.discard)
+
+
+def retry_job(job_id: str) -> dict:
+    job = get_job(job_id)
+    if not job:
+        raise ValueError("导入任务不存在")
+    if job["status"] in {"queued", "processing"}:
+        raise ValueError("导入任务仍在运行")
+    job.update(
+        status="queued",
+        updated_at=_now(),
+        processed=0,
+        succeeded=0,
+        failed=0,
+        llm_parsed=0,
+        errors=[],
+    )
+    _write_job(job)
+    task = asyncio.create_task(process_job(job_id))
+    TASKS.add(task)
+    task.add_done_callback(TASKS.discard)
+    return public_job(job)

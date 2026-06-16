@@ -1,4 +1,4 @@
-const state = { candidates: [], recommendations: [], importPoller: null };
+const state = { candidates: [], recommendations: [], importPoller: null, showCandidateTable: false };
 const $ = (id) => document.getElementById(id);
 const sample = "招聘材料方向博士，研究固态电解质或锂离子电池正极材料，熟悉 XRD、SEM、电化学测试，有 SCI 论文，适合新能源研发岗位。";
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
@@ -18,7 +18,111 @@ async function loadHealth() {
 async function loadCandidates() {
   state.candidates = await fetch("/api/candidates").then(r => r.json());
   $("candidateCount").textContent = state.candidates.length;
-  renderCandidateTable(state.candidates);
+  renderCandidateLibrary();
+}
+
+function candidateCompleteness(c) {
+  const checks = [
+    c.school && c.school !== "未识别院校",
+    c.major && c.major !== "材料相关专业",
+    c.gpa_ranking,
+    (c.research_experience || []).length,
+    c.english_level,
+    (c.competition_awards || []).length,
+    (c.work_experience || []).length || c.internship_experience,
+    (c.skill_certifications || []).length,
+    (c.student_work || []).length,
+    c.self_evaluation,
+  ];
+  return checks.filter(Boolean).length;
+}
+
+function candidateSignal(c, signal) {
+  const hasResearch = (c.research_experience || []).length || c.project_experience;
+  const hasWork = (c.work_experience || []).length || c.internship_experience;
+  return {
+    research: Boolean(hasResearch),
+    paper: Number(c.paper_count || 0) > 0 || (c.research_experience || []).some(item => (item.paper_outputs || []).length),
+    work: Boolean(hasWork),
+    english: Boolean(c.english_level),
+    award: (c.competition_awards || []).length > 0,
+    cert: (c.skill_certifications || []).length > 0,
+  }[signal] ?? true;
+}
+
+function getVisibleCandidates() {
+  const query = $("candidateSearch").value.trim().toLowerCase();
+  const degree = $("degreeFilter").value;
+  const signal = $("signalFilter").value;
+  const sort = $("candidateSort").value;
+  const filtered = state.candidates.filter(c => {
+    const text = JSON.stringify(c).toLowerCase();
+    return (!query || text.includes(query)) && (!degree || c.degree === degree) && (!signal || candidateSignal(c, signal));
+  });
+  const sorted = [...filtered];
+  if (sort === "completeness") sorted.sort((a, b) => candidateCompleteness(b) - candidateCompleteness(a));
+  if (sort === "papers") sorted.sort((a, b) => (b.paper_count || 0) - (a.paper_count || 0));
+  if (sort === "graduation") sorted.sort((a, b) => (b.graduation_year || 0) - (a.graduation_year || 0));
+  return sorted;
+}
+
+function renderCandidateStats(candidates) {
+  const stats = [
+    ["候选人", candidates.length, "当前筛选结果"],
+    ["博士", candidates.filter(c => c.degree === "博士").length, "高学历池"],
+    ["科研画像", candidates.filter(c => candidateSignal(c, "research")).length, "项目/课题"],
+    ["论文成果", candidates.filter(c => candidateSignal(c, "paper")).length, "SCI/专利"],
+    ["实习工作", candidates.filter(c => candidateSignal(c, "work")).length, "产业经验"],
+    ["英语信息", candidates.filter(c => candidateSignal(c, "english")).length, "语言能力"],
+  ];
+  $("candidateStats").innerHTML = stats.map(([label, value, note]) => `<div class="candidate-stat"><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`).join("");
+}
+
+function renderCandidateLibrary() {
+  const candidates = getVisibleCandidates();
+  renderCandidateStats(candidates);
+  renderCandidateCards(candidates);
+  renderCandidateTable(candidates);
+  $("candidateEmpty").classList.toggle("hidden", candidates.length > 0);
+  $("candidateTableWrap").classList.toggle("hidden", !state.showCandidateTable);
+  $("candidateTableToggle").textContent = state.showCandidateTable ? "隐藏表格" : "显示表格";
+}
+
+function renderCandidateCards(candidates) {
+  $("candidateCards").innerHTML = candidates.map(c => {
+    const completeness = candidateCompleteness(c);
+    const tags = [
+      ...(c.research_directions || []).slice(0, 3),
+      ...(c.industry_tags || []).slice(0, 2),
+    ];
+    const signals = [
+      [(c.research_experience || []).length ? "科研" : "", "signal-green"],
+      [c.english_level ? "英语" : "", "signal-blue"],
+      [(c.work_experience || []).length || c.internship_experience ? "实习" : "", "signal-amber"],
+      [(c.competition_awards || []).length ? "获奖" : "", "signal-red"],
+      [(c.skill_certifications || []).length ? "认证" : "", "signal-blue"],
+    ].filter(([label]) => label);
+    const summary = c.resume_summary || c.project_experience || "暂未形成完整画像，可重新导入并启用 DeepSeek 结构化解析。";
+    return `<article class="library-card" data-id="${esc(c.resume_id)}" tabindex="0">
+      <div class="library-card-head">
+        <div><strong>${esc(c.resume_id)}</strong><span>${esc(c.graduation_year)} 届</span></div>
+        <b>${completeness}/10</b>
+      </div>
+      <h3>${esc(c.degree)} · ${esc(c.school)}</h3>
+      <p class="library-major">${esc(c.major)}</p>
+      <p class="library-summary">${esc(summary)}</p>
+      <div class="tag-row">${tags.map(tag => `<span class="tag">${esc(tag)}</span>`).join("")}</div>
+      <div class="library-signals">
+        <span>SCI ${Number(c.paper_count || 0)} 篇</span>
+        <span>专利 ${Number(c.patent_count || 0)} 项</span>
+        ${signals.map(([label, cls]) => `<span class="${cls}">${esc(label)}</span>`).join("")}
+      </div>
+    </article>`;
+  }).join("");
+  document.querySelectorAll(".library-card").forEach(card => {
+    card.addEventListener("click", () => openLibraryCandidate(card.dataset.id));
+    card.addEventListener("keydown", event => { if (event.key === "Enter") openLibraryCandidate(card.dataset.id); });
+  });
 }
 
 function renderCandidateTable(candidates) {
@@ -203,9 +307,13 @@ document.querySelectorAll(".nav-item").forEach(button => button.addEventListener
 $("sampleButton").addEventListener("click", () => { $("queryInput").value = sample; $("queryInput").focus(); });
 $("recommendButton").addEventListener("click", runRecommendation);
 $("closeDialog").addEventListener("click", () => $("candidateDialog").close());
-$("candidateSearch").addEventListener("input", event => {
-  const q = event.target.value.toLowerCase();
-  renderCandidateTable(state.candidates.filter(c => JSON.stringify(c).toLowerCase().includes(q)));
+$("candidateSearch").addEventListener("input", renderCandidateLibrary);
+$("degreeFilter").addEventListener("change", renderCandidateLibrary);
+$("signalFilter").addEventListener("change", renderCandidateLibrary);
+$("candidateSort").addEventListener("change", renderCandidateLibrary);
+$("candidateTableToggle").addEventListener("click", () => {
+  state.showCandidateTable = !state.showCandidateTable;
+  renderCandidateLibrary();
 });
 $("openImportButton").addEventListener("click", () => { $("importPanel").classList.remove("hidden"); loadImportJobs(); });
 $("cancelImportButton").addEventListener("click", () => $("importPanel").classList.add("hidden"));

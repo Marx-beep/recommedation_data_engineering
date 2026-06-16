@@ -76,7 +76,7 @@
 
       <section id="candidatesView" class="view">
         <div class="table-toolbar">
-          <div><h2>匿名候选人库</h2><p>支持大批量简历统一抽取、脱敏与结构化解析。</p></div>
+          <div><h2>候选人画像库</h2><p>支持大批量简历统一抽取、脱敏与结构化解析，按学历、信号和结构完整度快速筛选。</p></div>
           <div class="toolbar-actions">
             <input id="candidateSearch" type="search" placeholder="搜索方向、技能、学校...">
             <button id="openImportButton" class="primary-button"><span>＋</span>批量导入</button>
@@ -100,7 +100,40 @@
           </div>
           <div id="importJobs" class="import-jobs"></div>
         </div>
-        <div class="table-wrap"><table><thead><tr><th>编号</th><th>学历 / 学校</th><th>研究方向</th><th>核心技能</th><th>成果</th><th>产业标签</th></tr></thead><tbody id="candidateTable"></tbody></table></div>
+        <div id="candidateStats" class="candidate-stats"></div>
+        <div class="candidate-controls">
+          <label>学历
+            <select id="degreeFilter">
+              <option value="">全部学历</option>
+              <option value="博士">博士</option>
+              <option value="硕士">硕士</option>
+              <option value="本科">本科</option>
+            </select>
+          </label>
+          <label>画像信号
+            <select id="signalFilter">
+              <option value="">全部画像</option>
+              <option value="research">有科研经历</option>
+              <option value="paper">有论文成果</option>
+              <option value="work">有实习/工作</option>
+              <option value="english">有英语水平</option>
+              <option value="award">有竞赛获奖</option>
+              <option value="cert">有技能认证</option>
+            </select>
+          </label>
+          <label>排序
+            <select id="candidateSort">
+              <option value="default">默认编号</option>
+              <option value="completeness">结构完整度优先</option>
+              <option value="papers">论文成果优先</option>
+              <option value="graduation">毕业年份优先</option>
+            </select>
+          </label>
+          <button id="candidateTableToggle" class="secondary-button">显示表格</button>
+        </div>
+        <div id="candidateCards" class="candidate-library"></div>
+        <div id="candidateEmpty" class="candidate-empty hidden">没有符合条件的候选人，换一个筛选条件试试。</div>
+        <div id="candidateTableWrap" class="table-wrap candidate-table-wrap hidden"><table><thead><tr><th>编号</th><th>学历 / 学校</th><th>研究方向</th><th>核心技能</th><th>成果</th><th>产业标签</th></tr></thead><tbody id="candidateTable"></tbody></table></div>
       </section>
 
       <section id="pipelineView" class="view">

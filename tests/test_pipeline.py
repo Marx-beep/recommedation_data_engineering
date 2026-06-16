@@ -89,6 +89,39 @@ def test_complete_resume_sections_are_structured():
     assert "团队协作" in candidate.self_evaluation
 
 
+def test_resume_parser_reduces_noise_in_structured_sections():
+    text = """个人简历
+    联系电话 13812345678 邮箱 test@example.com
+    智联招聘 请勿外传
+    清华大学 材料科学与工程专业 博士 2026
+    科研项目：固态电解质界面稳定性研究，发表 SCI 论文 2 篇
+    科研项目：固态电解质界面稳定性研究，发表 SCI 论文 2 篇
+    英语 CET-6 560
+    自我评价：责任心强，沟通清晰
+    """
+    fallback = parse_resume_locally(text, "ITEST00004")
+    candidate = _merge_model_candidate(
+        {
+            "school": "联系电话 13812345678",
+            "self_evaluation": "SCI 论文 2 篇；CET-6 560；责任心强",
+            "evidence": ["个人简历", "固态电解质界面稳定性研究"],
+            "research_experience": [{
+                "title": "科研项目",
+                "summary": "固态电解质界面稳定性研究",
+                "paper_outputs": ["SCI 论文 2 篇", "联系电话 13812345678"],
+                "content_tags": ["固态电解质"],
+                "evidence": ["个人简历", "固态电解质界面稳定性研究"],
+            }],
+        },
+        fallback,
+        "ITEST00004",
+    )
+    assert candidate.school == "清华大学"
+    assert all("联系电话" not in item for item in candidate.research_experience[0].paper_outputs)
+    assert candidate.evidence == ["固态电解质界面稳定性研究"]
+    assert "SCI" not in candidate.self_evaluation
+
+
 def test_zip_expansion_reports_unsupported_files(tmp_path: Path):
     archive_path = tmp_path / "resumes.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:

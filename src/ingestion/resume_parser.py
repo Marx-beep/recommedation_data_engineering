@@ -16,6 +16,9 @@ RESUME_SYSTEM_PROMPT = """你是严谨的简历结构化解析与概括助手。
 优先抽取有证据的信息，忽略页眉页脚、联系方式占位、求职网站水印、重复目录、空白符、乱码和排版碎片。
 不要把同一条信息重复塞进多个字段；自我评价只能放无法归入学校、专业、科研、英语、竞赛、实习、技能认证、学生工作的内容。
 每个列表字段最多输出 8 条，每条尽量不超过 80 个中文字符；证据片段必须来自原文且不超过 120 个中文字符。
+遇到 OCR 文本时要识别常见变体：RE/荣誉/奖学金归入竞赛获奖；研究成果/SCI/IF/一作/专利归入科研经历的 paper_outputs；
+校园经历/社团/党支部/班委/学生会/俱乐部归入学生工作；企业/公司/有限公司/实习/测试分析员等归入实习或工作；
+软件、普通话、职业资格、证书归入技能认证；GPA、绩点、分数、排名必须归入 gpa_ranking。
 
 必须输出以下结构：
 {
@@ -68,6 +71,13 @@ SELF_EVALUATION_BLOCKERS = [
     "论文", "SCI", "专利", "项目", "课题", "科研", "研究", "实习", "工作",
     "公司", "企业", "竞赛", "获奖", "证书", "认证", "学生会", "班长", "团支书",
 ]
+DEGREE_ALIASES = {"博士": "博士", "硕士": "硕士", "研究生": "硕士", "学士": "本科", "本科": "本科"}
+HONOR_KEYS = ["RE:", "荣誉", "奖励", "奖学金", "三好学生", "优秀", "先进个人", "标兵", "竞赛", "获奖", "一等奖", "二等奖", "三等奖"]
+STUDENT_WORK_KEYS = ["校园经历", "学生会", "社团", "社长", "部长", "班长", "班级", "委员", "团支书", "党支部", "俱乐部", "方阵", "干事"]
+WORK_KEYS = ["实习", "工作经历", "有限公司", "公司", "企业", "科技园", "研究院", "工程师", "测试分析员", "研发部"]
+SKILL_CERT_KEYS = ["证书", "认证", "资格证", "普通话", "软件", "Office", "Chemdraw", "Origin", "MestReNova", "职业资格"]
+SELF_KEYS = ["自我评价", "个人评价", "个人优势", "兴趣爱好", "积极", "上进", "沟通", "耐心", "责任心", "解决问题", "理解能力"]
+SECTION_HEADERS = {"基本信息", "教育表", "教育经历", "项目经历", "科研经历", "研究成果", "校园经历", "实习经历", "工作经历", "技能证书"}
 
 
 def _matches(text: str, options: list[str]) -> list[str]:
@@ -82,6 +92,8 @@ def _compact(value: str, limit: int = 120) -> str:
 
 def _is_noise(value: str) -> bool:
     text = _compact(value, 220)
+    if text in SECTION_HEADERS:
+        return True
     if len(text) < 2:
         return True
     if len(re.sub(r"[\W_]+", "", text)) < 2:
@@ -138,47 +150,144 @@ def _prepare_resume_text(text: str) -> str:
     return "\n".join(lines)
 
 
+def _contains_any(line: str, keys: list[str]) -> bool:
+    upper = line.upper()
+    return any(key.upper() in upper for key in keys)
+
+
+def _extract_degree(text: str) -> str:
+    for key in ["博士", "硕士", "研究生", "学士", "本科"]:
+        if key in text:
+            return DEGREE_ALIASES[key]
+    return "本科"
+
+
+def _education_lines(lines: list[str]) -> list[str]:
+    return [
+        line for line in lines
+        if re.search(r"(大学|学院|研究所)", line)
+        and not _contains_any(line, ["主修课程", "课程", "平台", "DIEU", "UNIVERSITY OF"])
+    ]
+
+
+def _extract_school(lines: list[str]) -> str:
+    for line in _education_lines(lines):
+        match = re.search(r"([\u4e00-\u9fff]{2,24}(?:大学|学院|研究所))", line)
+        if match:
+            return match.group(1)
+    return "未识别院校"
+
+
+def _extract_major(lines: list[str]) -> str:
+    for line in _education_lines(lines):
+        tail = re.sub(r"^.*?(?:大学|学院|研究所)", "", line)
+        tail = re.sub(r"\(?\s*(?:博士|硕士|研究生|学士|本科)[^)]*\)?", " ", tail)
+        tail = re.sub(r"20\d{2}[.\-/年]\d{0,2}[-至~—–]*20?\d{0,4}[.\-/年]?\d{0,2}", " ", tail)
+        tail = re.sub(r"\d+(?:\.\d+)?/\d+(?:\.\d+)?", " ", tail)
+        candidates = [
+            _compact(part, 40) for part in re.split(r"[，,;；\s]+", tail)
+            if 2 <= len(_compact(part, 40)) <= 30
+            and not _contains_any(part, ["双一流", "211", "985", "平台", "导师", "研究方向"])
+        ]
+        if candidates:
+            return candidates[0]
+    for line in lines:
+        if _contains_any(line, ["主修", "专业"]):
+            match = re.search(r"(?:专业|主修)[：:\s]*([\u4e00-\u9fffA-Za-z0-9、/（）()]{2,30})", line)
+            if match and not _contains_any(match.group(1), ["课程"]):
+                return _compact(match.group(1), 30)
+    return "材料相关专业"
+
+
+def _extract_gpa(lines: list[str]) -> str:
+    for line in lines:
+        has_fraction_gpa = re.search(r"\d+\.\d+/\d+(?:\.\d+)?|\d+(?:\.\d+)?/4(?:\.0+)?", line)
+        if has_fraction_gpa or _contains_any(line, ["GPA", "绩点", "排名", "专业前", "成绩"]):
+            return _compact(line, 100)
+    return ""
+
+
+def _paper_output_lines(lines: list[str]) -> list[str]:
+    outputs = []
+    for line in lines:
+        if _contains_any(line, ["SCI", "论文", "专利", "IF", "一作", "通讯", "发表", "在投", "期刊"]):
+            outputs.append(line)
+    return _clean_list(outputs, limit=8, item_limit=150)
+
+
+def _research_lines(lines: list[str]) -> list[str]:
+    result = []
+    for line in lines:
+        if _contains_any(line, ["研究方向", "科研", "项目", "课题", "博士论文", "研究成果", "设计合成", "制备", "性能研究", "机理", "催化", "材料"]):
+            result.append(line)
+    return _clean_list(result, limit=10, item_limit=150)
+
+
+def _work_lines(lines: list[str]) -> list[str]:
+    result = []
+    for line in lines:
+        if _contains_any(line, WORK_KEYS) and not _contains_any(line, ["电化学工作站", "测试技术", "主修课程"]):
+            result.append(line)
+    return _clean_list(result, limit=8, item_limit=150)
+
+
+def _extract_period(line: str) -> str:
+    match = re.search(r"(20\d{2}[.\-/年]\d{0,2}\s*[-至~—–]\s*20?\d{0,4}[.\-/年]?\d{0,2}|20\d{2}[.\-/年]\d{1,2})", line)
+    return _compact(match.group(1), 40) if match else ""
+
+
+def _extract_work_organization(line: str) -> str:
+    match = re.search(r"([\u4e00-\u9fffA-Za-z0-9（）()]{2,40}(?:有限公司|公司|企业|科技园|研究院|研究所|中心|实验室|部门))", line)
+    return _compact(match.group(1), 60) if match else "未识别单位"
+
+
+def _extract_work_role(line: str) -> str:
+    if "一一" in line:
+        line = line.split("一一", 1)[1]
+    match = re.search(r"([\u4e00-\u9fffA-Za-z0-9/]{0,12}(?:分析员|工程师|实习生|助理|负责人|经理|研究员|专员|教师))", line)
+    return _compact(match.group(1), 40) if match else ""
+
+
 def parse_resume_locally(text: str, resume_id: str) -> Candidate:
     text = _prepare_resume_text(text)
-    degree = "博士" if "博士" in text else "硕士" if "硕士" in text else "本科"
-    school_match = re.search(r"([\u4e00-\u9fff]{2,20}(?:大学|学院|研究所))", text)
-    major_match = re.search(r"([\u4e00-\u9fff]{2,20})(?:专业|主修)", text)
-    if not major_match:
-        major_match = re.search(r"(?:专业|主修)[：:\s]*([\u4e00-\u9fff]{2,20})", text)
+    lines = [_compact(line) for line in text.splitlines() if not _is_noise(line)]
+    degree = _extract_degree(text)
+    school = _extract_school(lines)
+    major = _extract_major(lines)
     years = [int(value) for value in re.findall(r"20(?:2[4-9]|3\d)", text)]
     paper_matches = re.findall(r"(?:SCI|论文)[^\d]{0,8}(\d+)", text, re.IGNORECASE)
     patent_matches = re.findall(r"专利[^\d]{0,8}(\d+)", text)
-    lines = [_compact(line) for line in text.splitlines() if not _is_noise(line)]
     directions = _matches(text, RESEARCH_DIRECTIONS)
     skills = _matches(text, EXPERIMENTAL_SKILLS)
     software = _matches(text, SOFTWARE_SKILLS)
     industries = _matches(text, INDUSTRY_TAGS)
-    gpa_line = _first_signal_line(lines, ["GPA", "绩点", "排名", "专业前", "成绩"])
+    gpa_line = _extract_gpa(lines)
     english_line = _first_signal_line(lines, ["CET", "IELTS", "TOEFL", "英语", "雅思", "托福"])
-    award_lines = _clean_list([line for line in lines if any(key in line for key in ["竞赛", "获奖", "一等奖", "二等奖", "三等奖", "奖学金"])])
-    certification_lines = _clean_list([line for line in lines if any(key in line for key in ["证书", "认证", "资格证"])])
-    student_lines = _clean_list([line for line in lines if any(key in line for key in ["学生会", "班长", "团支书", "社团", "学生工作"])])
+    award_lines = _clean_list([line for line in lines if _contains_any(line, HONOR_KEYS)], limit=8, item_limit=140)
+    certification_lines = _clean_list([line for line in lines if _contains_any(line, SKILL_CERT_KEYS)], limit=8, item_limit=140)
+    student_lines = _clean_list([line for line in lines if _contains_any(line, STUDENT_WORK_KEYS)], limit=8, item_limit=140)
     self_lines = _clean_list([
         line for line in lines
-        if any(key in line for key in ["自我评价", "个人评价", "个人优势", "兴趣爱好"])
+        if _contains_any(line, SELF_KEYS)
         and not any(key in line.upper() for key in SELF_EVALUATION_BLOCKERS)
-    ], limit=4)
-    research_lines = [line for line in lines if any(key in line for key in ["项目", "课题", "论文", "科研", "研究"])]
-    work_lines = [line for line in lines if any(key in line for key in ["实习", "工作", "公司", "企业"])]
+    ], limit=6, item_limit=120)
+    research_lines = _research_lines(lines)
+    work_lines = _work_lines(lines)
+    paper_outputs = _paper_output_lines(lines)
     research_summary = research_lines[0] if research_lines else ""
-    work_summary = work_lines[0] if work_lines else ""
+    work_summary = "；".join(work_lines[:2])
     return Candidate(
         resume_id=resume_id,
         degree=degree,
-        school=school_match.group(1) if school_match else "未识别院校",
-        major=major_match.group(1)[:20] if major_match else "材料相关专业",
+        school=school,
+        major=major,
         graduation_year=max(years) if years else datetime.now().year,
         research_directions=directions or ["材料研发"],
         experimental_skills=skills,
         software_skills=software,
         paper_count=max([int(value) for value in paper_matches], default=text.lower().count("sci")),
         patent_count=max([int(value) for value in patent_matches], default=0),
-        project_experience=next((line for line in lines if "项目" in line or "课题" in line), lines[0] if lines else "未识别"),
+        project_experience=next((line for line in research_lines if "项目" in line or "课题" in line), research_summary or (lines[0] if lines else "未识别")),
         internship_experience=work_summary,
         industry_tags=industries,
         evidence=_clean_list(lines, limit=3, item_limit=120) or [text[:160]],
@@ -186,14 +295,16 @@ def parse_resume_locally(text: str, resume_id: str) -> Candidate:
         research_experience=[ResearchExperience(
             title="科研经历",
             summary=_compact(research_summary, 140),
-            paper_outputs=_clean_list([line for line in research_lines if "论文" in line or "SCI" in line or "专利" in line], limit=6),
+            paper_outputs=paper_outputs,
             content_tags=list(dict.fromkeys(directions + skills))[:8],
             evidence=_clean_list(research_lines, limit=3),
-        )] if research_lines else [],
+        )] if research_lines or paper_outputs else [],
         english_level=_compact(english_line, 80),
         competition_awards=award_lines,
         work_experience=[CareerExperience(
-            organization="未识别单位",
+            organization=_extract_work_organization(work_summary),
+            role=_extract_work_role(work_summary),
+            period=_extract_period(work_summary),
             summary=_compact(work_summary, 140),
             content_tags=industries,
         )] if work_summary else [],

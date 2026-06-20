@@ -13,9 +13,11 @@ from src.models import Candidate, CareerExperience, ResearchExperience
 
 RESUME_SYSTEM_PROMPT = """你是严谨的简历结构化解析与概括助手。完整阅读匿名简历，将信息归入指定字段并概括。
 只输出 JSON，不要 markdown，不得编造原文没有的信息。无法识别时使用空字符串或空数组。
-优先抽取有证据的信息，忽略页眉页脚、联系方式占位、求职网站水印、重复目录、空白符、乱码和排版碎片。
-不要把同一条信息重复塞进多个字段；自我评价只能放无法归入学校、专业、科研、英语、竞赛、实习、技能认证、学生工作的内容。
-每个列表字段最多输出 8 条，每条尽量不超过 80 个中文字符；证据片段必须来自原文且不超过 120 个中文字符。
+你的首要目标是覆盖完整简历信息：逐行阅读原文，理解词语、句子和段落在具体上下文中的含义，把每一条有效信息归入最合适模块。
+不要只抽关键词；要按语义判断，例如同一句里可能同时包含教育、绩点、专业、研究方向或技能信息。
+除联系方式脱敏占位、水印、纯页码、重复空标题外，所有简历信息都必须进入某个结构化字段；无法归入固定模块的内容放入 other_information，并在 source_coverage 说明归档情况。
+自我评价只放能力、性格、兴趣、个人特点等信息；其他无法归类但仍有价值的信息放 other_information。
+列表字段可以输出多条，优先完整保留，不要为了简短而丢失论文、奖项、项目、学生工作、技能或实习条目。
 遇到 OCR 文本时要识别常见变体：RE/荣誉/奖学金归入竞赛获奖；研究成果/SCI/IF/一作/专利归入科研经历的 paper_outputs；
 校园经历/社团/党支部/班委/学生会/俱乐部归入学生工作；企业/公司/有限公司/实习/测试分析员等归入实习或工作；
 软件、普通话、职业资格、证书归入技能认证；GPA、绩点、分数、排名必须归入 gpa_ranking。
@@ -49,6 +51,8 @@ RESUME_SYSTEM_PROMPT = """你是严谨的简历结构化解析与概括助手。
   "skill_certifications": ["技能证书与职业认证"],
   "student_work": ["学生工作与组织经历概括"],
   "self_evaluation": "兜底口袋：不能归入上述字段的能力、特点、兴趣及其他有效信息概括",
+  "other_information": ["不能放入上述模块但仍应保留的其他简历信息"],
+  "source_coverage": ["覆盖检查：说明哪些原文板块已归入哪些字段，是否存在难以判断的信息"],
   "resume_summary": "候选人整体画像的一段话概括",
   "paper_count": 0,
   "patent_count": 0,
@@ -59,11 +63,11 @@ RESUME_SYSTEM_PROMPT = """你是严谨的简历结构化解析与概括助手。
 }
 
 注意：科研经历必须包含论文成果及内容标签；实习和工作统一放入 work_experience；
-自我评价是兜底口袋，只有不能归入其他字段的信息才放入其中。"""
+同一原文信息不要重复进入多个模块，但必须至少进入一个模块或 other_information。"""
 
 NOISE_MARKERS = [
-    "简历", "个人简历", "求职意向", "联系电话", "手机", "邮箱", "email", "e-mail",
-    "微信", "地址", "出生年月", "籍贯", "政治面貌", "证件照", "照片", "页码",
+    "联系电话", "手机", "邮箱", "email", "e-mail",
+    "微信", "证件照", "照片", "页码",
     "智联招聘", "前程无忧", "猎聘", "BOSS直聘", "请勿外传", "保密", "confidential",
 ]
 SELF_EVALUATION_BLOCKERS = [
@@ -77,7 +81,7 @@ STUDENT_WORK_KEYS = ["校园经历", "学生会", "社团", "社长", "部长", 
 WORK_KEYS = ["实习", "工作经历", "有限公司", "公司", "企业", "科技园", "研究院", "工程师", "测试分析员", "研发部"]
 SKILL_CERT_KEYS = ["证书", "认证", "资格证", "普通话", "软件", "Office", "Chemdraw", "Origin", "MestReNova", "职业资格"]
 SELF_KEYS = ["自我评价", "个人评价", "个人优势", "兴趣爱好", "积极", "上进", "沟通", "耐心", "责任心", "解决问题", "理解能力"]
-SECTION_HEADERS = {"基本信息", "教育表", "教育经历", "项目经历", "科研经历", "研究成果", "校园经历", "实习经历", "工作经历", "技能证书"}
+SECTION_HEADERS = {"简历", "个人简历", "基本信息", "教育表", "教育经历", "项目经历", "科研经历", "研究成果", "校园经历", "实习经历", "工作经历", "技能证书"}
 
 
 def _matches(text: str, options: list[str]) -> list[str]:
@@ -92,7 +96,7 @@ def _compact(value: str, limit: int = 120) -> str:
 
 def _is_noise(value: str) -> bool:
     text = _compact(value, 220)
-    if text in SECTION_HEADERS:
+    if any(text.startswith(header) and len(text) <= len(header) + 6 for header in SECTION_HEADERS):
         return True
     if len(text) < 2:
         return True
@@ -114,7 +118,7 @@ def _clean_list(values: object, *, limit: int = 8, item_limit: int = 100) -> lis
         if isinstance(value, dict):
             value = " ".join(str(v) for v in value.values() if isinstance(v, (str, int, float)))
         item = _compact(str(value), item_limit)
-        if item and not _is_noise(item) and item not in cleaned:
+        if item and item not in SECTION_HEADERS and not _is_noise(item) and item not in cleaned:
             cleaned.append(item)
         if len(cleaned) >= limit:
             break
@@ -212,7 +216,7 @@ def _paper_output_lines(lines: list[str]) -> list[str]:
     for line in lines:
         if _contains_any(line, ["SCI", "论文", "专利", "IF", "一作", "通讯", "发表", "在投", "期刊"]):
             outputs.append(line)
-    return _clean_list(outputs, limit=8, item_limit=150)
+    return _clean_list(outputs, limit=40, item_limit=180)
 
 
 def _research_lines(lines: list[str]) -> list[str]:
@@ -220,7 +224,7 @@ def _research_lines(lines: list[str]) -> list[str]:
     for line in lines:
         if _contains_any(line, ["研究方向", "科研", "项目", "课题", "博士论文", "研究成果", "设计合成", "制备", "性能研究", "机理", "催化", "材料"]):
             result.append(line)
-    return _clean_list(result, limit=10, item_limit=150)
+    return _clean_list(result, limit=40, item_limit=180)
 
 
 def _work_lines(lines: list[str]) -> list[str]:
@@ -228,7 +232,71 @@ def _work_lines(lines: list[str]) -> list[str]:
     for line in lines:
         if _contains_any(line, WORK_KEYS) and not _contains_any(line, ["电化学工作站", "测试技术", "主修课程"]):
             result.append(line)
-    return _clean_list(result, limit=8, item_limit=150)
+    return _clean_list(result, limit=30, item_limit=180)
+
+
+MODULE_RULES = {
+    "education": ["大学", "学院", "研究所", "博士", "硕士", "本科", "学士", "专业", "主修", "GPA", "绩点", "排名"],
+    "research": ["研究方向", "科研", "项目", "课题", "博士论文", "研究成果", "设计", "合成", "制备", "性能", "机理", "材料"],
+    "outputs": ["SCI", "论文", "专利", "IF", "一作", "通讯", "发表", "在投", "期刊"],
+    "english": ["CET", "IELTS", "TOEFL", "英语", "雅思", "托福"],
+    "awards": HONOR_KEYS,
+    "work": WORK_KEYS,
+    "skills": EXPERIMENTAL_SKILLS + SOFTWARE_SKILLS + SKILL_CERT_KEYS,
+    "student_work": STUDENT_WORK_KEYS,
+    "self_evaluation": SELF_KEYS,
+}
+
+
+def _source_lines(text: str) -> list[str]:
+    prepared = _prepare_resume_text(text)
+    return [_compact(line, 260) for line in prepared.splitlines() if not _is_noise(line)]
+
+
+def _line_modules(line: str) -> list[str]:
+    modules = [name for name, keys in MODULE_RULES.items() if _contains_any(line, keys)]
+    return modules or ["other_information"]
+
+
+def _build_llm_resume_input(text: str) -> str:
+    lines = _source_lines(text)
+    numbered = [f"L{index:03d} [{'/'.join(_line_modules(line))}] {line}" for index, line in enumerate(lines, 1)]
+    module_blocks: dict[str, list[str]] = {name: [] for name in [*MODULE_RULES.keys(), "other_information"]}
+    for index, line in enumerate(lines, 1):
+        for module in _line_modules(line):
+            module_blocks[module].append(f"L{index:03d} {line}")
+    outline = []
+    for module, values in module_blocks.items():
+        if values:
+            outline.append(f"## {module}\n" + "\n".join(values[:80]))
+    return "\n\n".join([
+        "请基于下面的完整脱敏简历原文和行级模块草稿做结构化解析。必须覆盖每一条有效行；不能判断模块的放入 other_information。",
+        "【完整脱敏原文】",
+        text[:60000],
+        "【行级模块草稿】",
+        "\n".join(numbered[:1000]),
+        "【按模块聚合的候选证据】",
+        "\n\n".join(outline),
+    ])
+
+
+def _other_information(lines: list[str]) -> list[str]:
+    return _clean_list([
+        line for line in lines
+        if _line_modules(line) == ["other_information"]
+    ], limit=60, item_limit=180)
+
+
+def _coverage_summary(lines: list[str], other: list[str]) -> list[str]:
+    counts: dict[str, int] = {}
+    for line in lines:
+        for module in _line_modules(line):
+            counts[module] = counts.get(module, 0) + 1
+    return [
+        f"有效文本行 {len(lines)} 条；已按语义归档到 {len([k for k, v in counts.items() if v])} 类模块",
+        "模块行数：" + "；".join(f"{name}={count}" for name, count in sorted(counts.items())),
+        f"其他信息兜底 {len(other)} 条",
+    ]
 
 
 def _extract_period(line: str) -> str:
@@ -263,17 +331,21 @@ def parse_resume_locally(text: str, resume_id: str) -> Candidate:
     industries = _matches(text, INDUSTRY_TAGS)
     gpa_line = _extract_gpa(lines)
     english_line = _first_signal_line(lines, ["CET", "IELTS", "TOEFL", "英语", "雅思", "托福"])
-    award_lines = _clean_list([line for line in lines if _contains_any(line, HONOR_KEYS)], limit=8, item_limit=140)
-    certification_lines = _clean_list([line for line in lines if _contains_any(line, SKILL_CERT_KEYS)], limit=8, item_limit=140)
-    student_lines = _clean_list([line for line in lines if _contains_any(line, STUDENT_WORK_KEYS)], limit=8, item_limit=140)
+    award_lines = _clean_list([line for line in lines if _contains_any(line, HONOR_KEYS)], limit=30, item_limit=180)
+    certification_lines = _clean_list([line for line in lines if _contains_any(line, SKILL_CERT_KEYS)], limit=30, item_limit=180)
+    student_lines = _clean_list([
+        line for line in lines
+        if _contains_any(line, STUDENT_WORK_KEYS) and not _contains_any(line, HONOR_KEYS)
+    ], limit=30, item_limit=180)
     self_lines = _clean_list([
         line for line in lines
         if _contains_any(line, SELF_KEYS)
         and not any(key in line.upper() for key in SELF_EVALUATION_BLOCKERS)
-    ], limit=6, item_limit=120)
+    ], limit=20, item_limit=180)
     research_lines = _research_lines(lines)
     work_lines = _work_lines(lines)
     paper_outputs = _paper_output_lines(lines)
+    other_information = _other_information(lines)
     research_summary = research_lines[0] if research_lines else ""
     work_summary = "；".join(work_lines[:2])
     return Candidate(
@@ -290,7 +362,7 @@ def parse_resume_locally(text: str, resume_id: str) -> Candidate:
         project_experience=next((line for line in research_lines if "项目" in line or "课题" in line), research_summary or (lines[0] if lines else "未识别")),
         internship_experience=work_summary,
         industry_tags=industries,
-        evidence=_clean_list(lines, limit=3, item_limit=120) or [text[:160]],
+        evidence=_clean_list(lines, limit=12, item_limit=180) or [text[:160]],
         gpa_ranking=_compact(gpa_line, 80),
         research_experience=[ResearchExperience(
             title="科研经历",
@@ -312,16 +384,17 @@ def parse_resume_locally(text: str, resume_id: str) -> Candidate:
         student_work=student_lines,
         self_evaluation="；".join(self_lines),
         resume_summary=f"{degree}，研究方向包括{'、'.join(directions or ['材料研发'])}，核心技能包括{'、'.join((skills + software)[:6]) or '待补充'}。",
+        other_information=other_information,
+        source_coverage=_coverage_summary(lines, other_information),
     )
 
 
 async def parse_resume(text: str, resume_id: str, use_llm: bool) -> tuple[Candidate, bool]:
-    cleaned_text = _prepare_resume_text(text)
-    fallback = parse_resume_locally(cleaned_text, resume_id)
+    fallback = parse_resume_locally(text, resume_id)
     if not use_llm or not settings.use_llm or not settings.api_key:
         return fallback, False
     try:
-        async with httpx.AsyncClient(timeout=35) as client:
+        async with httpx.AsyncClient(timeout=90) as client:
             response = await client.post(
                 f"{settings.base_url.rstrip('/')}/chat/completions",
                 headers={"Authorization": f"Bearer {settings.api_key}"},
@@ -331,7 +404,7 @@ async def parse_resume(text: str, resume_id: str, use_llm: bool) -> tuple[Candid
                     "response_format": {"type": "json_object"},
                     "messages": [
                         {"role": "system", "content": RESUME_SYSTEM_PROMPT},
-                        {"role": "user", "content": cleaned_text[:24000]},
+                        {"role": "user", "content": _build_llm_resume_input(text)},
                     ],
                 },
             )
@@ -350,13 +423,14 @@ def _merge_model_candidate(parsed: dict, fallback: Candidate, resume_id: str) ->
     parsed = parsed if isinstance(parsed, dict) else {}
     fallback_data = fallback.model_dump()
     parsed["resume_id"] = resume_id
+    scalar_limits = {"self_evaluation": 1600, "resume_summary": 800, "project_experience": 1200, "internship_experience": 1200}
     for field in [
         "degree", "school", "major", "graduation_year", "paper_count", "patent_count",
         "project_experience", "internship_experience", "gpa_ranking", "english_level",
         "self_evaluation", "resume_summary",
     ]:
         if isinstance(parsed.get(field), str):
-            parsed[field] = _compact(parsed[field], 180)
+            parsed[field] = _compact(parsed[field], scalar_limits.get(field, 220))
         if parsed.get(field) is None or parsed.get(field) == "" or _is_noise(str(parsed.get(field))):
             parsed[field] = fallback_data[field]
     if parsed["degree"] not in {"本科", "硕士", "博士"}:
@@ -364,14 +438,14 @@ def _merge_model_candidate(parsed: dict, fallback: Candidate, resume_id: str) ->
     parsed["graduation_year"] = _safe_int(parsed.get("graduation_year"), fallback.graduation_year)
     parsed["paper_count"] = _safe_int(parsed.get("paper_count"), fallback.paper_count)
     parsed["patent_count"] = _safe_int(parsed.get("patent_count"), fallback.patent_count)
-    for field in [
-        "research_directions", "experimental_skills", "software_skills", "industry_tags",
-        "competition_awards", "skill_certifications", "student_work",
-    ]:
-        model_values = _clean_list(parsed.get(field), limit=8)
+    for field in ["research_directions", "experimental_skills", "software_skills", "industry_tags"]:
+        model_values = _clean_list(parsed.get(field), limit=60, item_limit=220)
         parsed[field] = list(dict.fromkeys(fallback_data[field] + model_values))
+    for field in ["competition_awards", "skill_certifications", "student_work", "other_information", "source_coverage"]:
+        model_values = _clean_list(parsed.get(field), limit=60, item_limit=220)
+        parsed[field] = model_values or fallback_data[field]
     evidence = parsed.get("evidence")
-    cleaned_evidence = _clean_list(evidence, limit=6, item_limit=120)
+    cleaned_evidence = _clean_list(evidence, limit=20, item_limit=180)
     if cleaned_evidence:
         parsed["evidence"] = cleaned_evidence
     else:
@@ -393,9 +467,9 @@ def _clean_research_records(records: object) -> list[dict]:
         item = {
             "title": _compact(record.get("title", ""), 80) or "科研经历",
             "summary": _compact(record.get("summary", ""), 160),
-            "paper_outputs": _clean_list(record.get("paper_outputs"), limit=6),
-            "content_tags": _clean_list(record.get("content_tags"), limit=8, item_limit=30),
-            "evidence": _clean_list(record.get("evidence"), limit=3, item_limit=120),
+            "paper_outputs": _clean_list(record.get("paper_outputs"), limit=40, item_limit=220),
+            "content_tags": _clean_list(record.get("content_tags"), limit=20, item_limit=50),
+            "evidence": _clean_list(record.get("evidence"), limit=12, item_limit=180),
         }
         if item["summary"] or item["paper_outputs"] or item["content_tags"]:
             cleaned.append(item)
@@ -414,7 +488,7 @@ def _clean_work_records(records: object) -> list[dict]:
             "role": _compact(record.get("role", ""), 60),
             "period": _compact(record.get("period", ""), 40),
             "summary": _compact(record.get("summary", ""), 160),
-            "content_tags": _clean_list(record.get("content_tags"), limit=6, item_limit=30),
+            "content_tags": _clean_list(record.get("content_tags"), limit=20, item_limit=50),
         }
         if item["summary"] or item["organization"] or item["role"]:
             cleaned.append(item)

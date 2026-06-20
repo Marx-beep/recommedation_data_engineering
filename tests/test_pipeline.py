@@ -122,6 +122,19 @@ def test_resume_parser_reduces_noise_in_structured_sections():
     assert "SCI" not in candidate.self_evaluation
 
 
+def test_resume_parser_keeps_unclassified_information_and_coverage():
+    text = """北京化工大学 材料科学与工程 博士 2026
+    籍贯：陕西省延安市 政治面貌：中共党员
+    研究方向：生物基材料与光聚合
+    校园经历：担任党支部副书记
+    兴趣爱好：羽毛球、唱歌"""
+    candidate = parse_resume_locally(text, "ITEST00005")
+    assert any("籍贯" in item for item in candidate.other_information)
+    assert candidate.student_work
+    assert "羽毛球" in candidate.self_evaluation
+    assert candidate.source_coverage
+
+
 def test_zip_expansion_reports_unsupported_files(tmp_path: Path):
     archive_path = tmp_path / "resumes.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:

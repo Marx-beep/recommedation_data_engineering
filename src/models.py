@@ -45,6 +45,8 @@ class Candidate(BaseModel):
     student_work: list[str] = Field(default_factory=list)
     self_evaluation: str = ""
     resume_summary: str = ""
+    other_information: list[str] = Field(default_factory=list)
+    source_coverage: list[str] = Field(default_factory=list)
 
 
 class JobProfile(BaseModel):
